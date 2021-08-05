@@ -1,6 +1,17 @@
 ####本脚本用于HTO项目的数据导入及统计预处理####
 
+###从数据库读取####
+#SQL 数据导入
+connect<-dbConnect(MySQL(),dbname="hoteldata",user="root",password="141242343")
+data.htl.raw<-as.data.table(dbReadTable(connect,"hotel_monitoring"))
 
+length(unique(data.htl.raw$tid))
+# 1125
+length(unique(data.htl.raw$deviceId))
+# 1131
+
+
+####基本信息统计####
 for(i in list.files()[grep(".csv",list.files(),fixed = TRUE)]){
   nn<-as.data.table(read.csv(file = i))
   nn$datetime<-as.POSIXct(nn$datetime)
