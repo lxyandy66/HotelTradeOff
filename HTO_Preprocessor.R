@@ -16,6 +16,11 @@ for(i in list.files()[grep(".csv",list.files(),fixed = TRUE)]){
   nn<-as.data.table(read.csv(file = i))
   nn$datetime<-as.POSIXct(nn$datetime)
   nn$deviceId<-as.character(nn$deviceId)
+  if (exists("data.htl.raw.append")) {
+    rbind(data.htl.raw.append,nn)
+  }else {
+    data.htl.raw.append<-as.data.table(nn)
+  }
   # 每栋建筑的统计集合
   stat.htl.bldg.base<-data.table(hotelName=i,
                                  tidCount=length(unique(nn$tid)),
@@ -46,34 +51,63 @@ ggplot(data.htl.raw[power>50],aes(x=as.factor(deviceId),y=power,group=deviceId))
   stat_summary(geom = "line",fun.y = mean,na.rm=TRUE,group=1,color="red")
 
 # 看一下室内温度分布
-ggplot(data.htl.raw[totalElec<10000],aes(x=totalElec))+geom_density()
+ggplot(data.htl.raw,aes(x=interval))+geom_density()
 
 nrow(data.htl.raw[totalElec>8000])
 
 
-stat.htl.device.hour<-data.htl.hour[,.(
+stat.htl.device.hour<-data.htl.hour.ac[,.(
   hourLogCount=length(labelDevHour),
-  meanPower=mean(mPower[mPower>100],na.rm=TRUE),
-  useRatio=sum(logCount,na.rm=TRUE)/sum(onCount,na.rm=TRUE)
-),by=(deviceId=substr(labelDevHour,1,11))]
+  meanOnPower=mean(mPower[mPower>100],na.rm=TRUE),
+  useRatio=sum(onCount,na.rm=TRUE)/sum(logCount,na.rm=TRUE)
+),by=deviceId]
 
 # 合并设备ID
 info.htl.device.base<-read.xlsx(file="HTL_设备统计_tid.xlsx",sheetIndex = 1)
 data.htl.raw<-merge(data.htl.raw,info.htl.device.base[,c("tid","deviceId")],
                     by.x="tid",by.y="tid",all.x=TRUE)
 save(data.htl.raw,file="HTL_原始数据集合_仅分配ID.rdata")
-s
+
+
+####合并追加数据用####
+# 数据文件为data.htl.raw/data.htl.raw.append
+# 去掉一些不需要的行
+
+names(data.htl.raw.append)[2]<-"deviceNo"
+# append  [1] "tid"       "deviceNo"  "datetime"  "onOff"     "mode"     
+# [6] "fanSpeed"  "setTemp"   "power"     "totalElec" "inTemp"  
+
+data.htl.raw[,c("city","labeDevHour","id","deviceId")]<-NULL
+names(data.htl.raw)
+data.htl.raw.merge<-rbind(data.htl.raw,data.htl.raw.append)
+# 合并后删除原数据
+data.htl.raw<-data.htl.raw.merge
+rm(data.htl.raw.append)
+rm(data.htl.raw.merge)
+
+#
+data.htl.raw<-data.htl.raw[!duplicated(data.htl.raw)]
+
+data.htl.raw$month<-month(data.htl.raw$datetime)
+
+nn1<-data.htl.raw[(month%in%c(12,1,2))&inTemp<5]$labelDevHour%>%{data.htl.raw[labelDevHour%in%.]}
+ggplot(nn3[inTemp<40],aes(x=inTemp))+geom_density()
+
+
 # 清理部分异常值
 # 功率>3000
 # 室温>40
 data.htl.raw<-data.htl.raw%>%{
   .[inTemp>40]$inTemp<-NA
+  .[inTemp<5]$inTemp<-NA
   .[power>3000]$power<-NA
   .[totalElec>10000]$totalElec<-NA
   .
 }
 
-data.htl.raw$interval<-
+setorder(data.htl.raw,labelDevHour)
+data.htl.raw$previousTime<-c(NA,data.htl.raw[1:(nrow(data.htl.raw)-1)]$datetime)
+data.htl.raw$interval<-as.numeric(data.htl.raw$datetime)-data.htl.raw$previousTime
 data.htl.raw$city<-substr(data.htl.raw$deviceId,1,2)
 
 #合并至小时
@@ -81,9 +115,9 @@ setorder(data.htl.raw,deviceId,datetime)
 #注意广州的csv时间格式导入不同，需要重新单独进行时间的合并
 #data.htl.raw$datetime<-as.POSIXct(data.htl.raw$datetime)
 data.htl.raw$labelDevHour<-data.htl.raw%>%
-  {paste(.$deviceId,format(.$datetime,format="%y-%M-%d_%H"),sep = "_")}
+  {paste(.$deviceId,format(.$datetime,format="%y-%m-%d_%H"),sep = "_")}
 #此处已完成如上基本清洗
-data.htl.hour<-data.htl.raw[,.(
+data.htl.hour.ac<-data.htl.raw[,.(
     deviceId=deviceId[1],
     logCount=length(datetime),
     onCount=length(datetime[onOff==1]),
@@ -96,9 +130,45 @@ data.htl.hour<-data.htl.raw[,.(
     lowPowerCount=length(power[onOff==1&power<100]),
     highPowerCount=length(power[onOff==1&power>100]),
     totalElec=max(totalElec,na.rm=TRUE)[1]-min(totalElec,na.rm=TRUE)[1],
-    mIntemp=mean(inTemp,na.rm=TRUE)
-  ),by=(labelDevHour=paste(deviceId,format(datetime,format="%y-%M-%d_%H"),sep = "_"))]
+    mIntemp=mean(inTemp,na.rm=TRUE),
+    mInterval=mean(interval[interval>0&interval<1800],na.rm=TRUE)
+  ),by=labelDevHour]
++
 
-names(data.htl.hour)[1]<-"labelDevHour"
+####统计各小时的使用情况#####
+data.htl.hour.ac[,':='(hour=substr(labelDevHour,22,23),
+                    bldgId=substr(labelDevHour,1,5))]
 
-data.htl.hour
+data.htl.hour.ac[,datetime:=as.POSIXct(paste("20",substr(labelDevHour,13,20),hour,":00",sep = ""))]
+
+data.htl.hour.bldg<-data.htl.hour.ac[,.(deviceCount=length(labelDevHour),
+                                        hour=hour[1],
+                                        onDevCount=length(labelDevHour[(onCount/logCount)>0.5]),
+                                        mPower=sum(mPower[!is.nan(mPower)],na.rm = TRUE),
+                                        totalElec=sum(totalElec[!is.nan(totalElec)],na.rm = TRUE)
+                                        ),by=.(bldgId,datetime)]
+data.htl.hour.bldg[,onRatio:=onDevCount/deviceCount]
+
+data.htl.day.ac<-data.htl.hour.ac[,.(deviceCount=length(labelDevHour),
+                                        onDevCount=length(labelDevHour[(onCount/logCount)>0.5]),
+                                        mPower=sum(mPower[!is.nan(mPower)],na.rm = TRUE),
+                                        totalElec=sum(totalElec[!is.nan(totalElec)],na.rm = TRUE)),
+                                  by=.(deviceId,date(datetime))]
+
+ggplot(data.htl.raw[substr(deviceId,1,5)=="SH_01"&power>100],aes(x=as.factor(mode),y=power))+
+  geom_boxplot(width=0.5)+stat_summary(fun = mean,na.rm=TRUE,geom = "line",color="red",group=1)+
+  stat_summary(fun = mean,na.rm=TRUE,geom = "point",color="red")+facet_wrap(.~as.factor(onOff))+
+  theme_bw()+theme(axis.text=element_text(size=18),axis.title=element_text(size=18,face="bold"),legend.text = element_text(size=16))
+
+names(data.htl.hour.ac)[1]<-"labelDevHour"
+
+ggplot(data.htl.hour.ac[substr(deviceId,1,5)=="SH_01"],aes(x=hour,y=length(unique(deviceId))))+geom_density()+#xlim(c(0,10000))+
+  theme_bw()+theme(axis.text=element_text(size=18),axis.title=element_text(size=18,face="bold"),legend.text = element_text(size=16))
+
+
+outputCol<-c( "datetime","deviceId","onOff","mode","fanSpeed","setTemp","inTemp","power","totalElec")
+data.htl.raw$bldgId<-substr(data.htl.raw$deviceId,1,5)
+for(i in unique(data.htl.raw$bldgId)){
+  write.csv(data.htl.raw[bldgId==i,..outputCol],file=paste(i,"Cleaned.csv",sep = "_"))
+}
+
