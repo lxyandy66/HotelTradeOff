@@ -50,8 +50,6 @@ ggplot(data.htl.raw[power>50],aes(x=as.factor(deviceId),y=power,group=deviceId))
   stat_summary(geom = "point",fun.y = mean,na.rm=TRUE,color="red")+
   stat_summary(geom = "line",fun.y = mean,na.rm=TRUE,group=1,color="red")
 
-# 看一下室内温度分布
-ggplot(data.htl.raw,aes(x=interval))+geom_density()
 
 nrow(data.htl.raw[totalElec>8000])
 
@@ -102,13 +100,24 @@ data.htl.raw<-data.htl.raw%>%{
   .[inTemp<5]$inTemp<-NA
   .[power>3000]$power<-NA
   .[totalElec>10000]$totalElec<-NA
+  .[month%in%c(5:10)][inTemp<10]<-NA
   .
 }
 
 setorder(data.htl.raw,labelDevHour)
 data.htl.raw$previousTime<-c(NA,data.htl.raw[1:(nrow(data.htl.raw)-1)]$datetime)
 data.htl.raw$interval<-as.numeric(data.htl.raw$datetime)-data.htl.raw$previousTime
+data.htl.raw$NextTime<-c(data.htl.raw[-1]$datetime,NA)
+data.htl.raw$nextInterval<-as.numeric(data.htl.raw$NextTime-data.htl.raw$datetime)
 data.htl.raw$city<-substr(data.htl.raw$deviceId,1,2)
+
+# 看一下室内温度分布
+ggplot(data.htl.raw[interval<1500],aes(x=interval))+geom_density()
+
+
+#清洗间隔过大间隔
+data.htl.raw[interval>20*60|interval<0]$interval<-NA
+data.htl.raw[nextInterval>20*60|nextInterval<0]$nextInterval<-NA
 
 #合并至小时
 setorder(data.htl.raw,deviceId,datetime)
@@ -116,8 +125,11 @@ setorder(data.htl.raw,deviceId,datetime)
 #data.htl.raw$datetime<-as.POSIXct(data.htl.raw$datetime)
 data.htl.raw$labelDevHour<-data.htl.raw%>%
   {paste(.$deviceId,format(.$datetime,format="%y-%m-%d_%H"),sep = "_")}
+
+data.htl.raw<-data.htl.raw[!is.na(deviceId)]
 #此处已完成如上基本清洗
 data.htl.hour.ac<-data.htl.raw[,.(
+    hour=hour(datetime[1]),
     deviceId=deviceId[1],
     logCount=length(datetime),
     onCount=length(datetime[onOff==1]),
@@ -127,19 +139,39 @@ data.htl.hour.ac<-data.htl.raw[,.(
     mPower=mean(power[onOff==1],na.rm=TRUE),
     mLowPower=mean(power[onOff==1&power<100],na.rm=TRUE),
     mHighPower=mean(power[onOff==1&power>100],na.rm=TRUE),
+    sumPower=sum(power,na.rm = TRUE),
+    sumElec=sum(power*nextInterval,na.rm = TRUE),
     lowPowerCount=length(power[onOff==1&power<100]),
     highPowerCount=length(power[onOff==1&power>100]),
     totalElec=max(totalElec,na.rm=TRUE)[1]-min(totalElec,na.rm=TRUE)[1],
     mIntemp=mean(inTemp,na.rm=TRUE),
-    mInterval=mean(interval[interval>0&interval<1800],na.rm=TRUE)
+    mInterval=mean(interval[interval>0&interval<1800],na.rm=TRUE),
+    sessionInterval=max(datetime,na.rm = TRUE)-min(datetime,na.rm = TRUE)
   ),by=labelDevHour]
-+
+
 
 ####统计各小时的使用情况#####
-data.htl.hour.ac[,':='(hour=substr(labelDevHour,22,23),
-                    bldgId=substr(labelDevHour,1,5))]
+data.htl.hour.ac[,':='(bldgId=substr(labelDevHour,1,5),
+                    datetime=as.POSIXct(paste("20",substr(labelDevHour,13,20),hour,":00",sep = "")),
+                    onRatio=onCount/logCount)]
 
-data.htl.hour.ac[,datetime:=as.POSIXct(paste("20",substr(labelDevHour,13,20),hour,":00",sep = ""))]
+#根据能耗判断开关
+data.htl.hour.ac$onOffElec<-0
+data.htl.hour.ac[totalElec>0]$onOffElec<-1
+
+
+ggplot(data.htl.hour.ac[sumElec>3600],aes(x=as.numeric(sumElec/(3600*1000))))+geom_density()
+ggplot(data.htl.hour.ac[maxMode!=0&totalElec>0],aes(x=as.factor(round(onRatio,1)),y=totalElec))+geom_boxplot()+ylim(c(0,1.5))+
+  stat_summary(fun = mean,na.rm=TRUE,geom = "point",color="red")
+#看看一些奇怪的情况
+#小时开启率过低的
+nn<-data.htl.raw[labelDevHour%in%data.htl.hour.ac[onRatio<0.1&totalElec>0.2]$labelDevHour]
+nn1<-table(nn$labelDevHour)%>%as.data.table()
+View(nn1)
+ggplot(nn1,aes(x=N))+geom_density()
+nn2<-data.htl.raw[labelDevHour=="CD_02_26-69_19-04-19_01"]
+
+#启动模式占比
 
 data.htl.hour.bldg<-data.htl.hour.ac[,.(deviceCount=length(labelDevHour),
                                         hour=hour[1],
