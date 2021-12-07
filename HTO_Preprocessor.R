@@ -212,24 +212,50 @@ for(i in unique(data.htl.raw$bldgId)){
 
 
 ####小时级别的插值处理####
+data.htl.raw[labelDevHour=="CD_01_09-99_19-04-10_17"]
+# 原始数据中的缺失值情况
+# > apply(data.htl.raw[,c("setTemp","inTemp","power","totalElec")], MARGIN = 2, FUN = function(x){sum(is.na(x))})
+# setTemp    inTemp     power totalElec 
+# 0   1989345       588        12
+# 原始小时数据中的缺失值情况
+# apply(data.htl.hour.ac[,c("mSetTemp","sumPower" ,"mPower","mIntemp" )], MARGIN = 2, FUN = function(x){sum(is.na(x))})
+# mSetTemp sumPower   mPower  mIntemp 
+# 1037287        0  1037290   192080 
+# 有空调开启时的数据缺失情况
+# > apply(data.htl.hour.ac[onRatio>0,c("mSetTemp","sumPower" ,"mPower","mIntemp" )], MARGIN = 2, FUN = function(x){sum(is.na(x))})
+# mSetTemp sumPower   mPower  mIntemp 
+# 0        0        3    48949 
+
 data.htl.hour.ac<-data.htl.hour.ac%>%mutate_all(funs(ifelse(is.nan(.),NA, .)))
+apply(data.htl.hour.ac.appr[,c("mSetTemp","sumPower" ,"mPower","apprIntemp" )], MARGIN = 2, FUN = function(x){sum(is.na(x))})
 
-data.htl.hour.ac1<-cbind(#data.htl.hour.ac,
-                        data.htl.hour.ac[,.(
-                          prevLogTime=c(datetime[1:(length(datetime)-1)],NA),
-                          forwLogTime=c(datetime[2:(length(datetime))],NA)-datetime,
-                          #prevIntempNa=is.na(mIntemp)+c(NA,is.na(mIntemp)[1:(length(mIntemp)-1)]),
-                          forwIntempNa=c(is.na(mIntemp)[2:(length(mIntemp))],NA)-is.na(mIntemp),
+data.htl.hour.ac.appr<-data.htl.hour.ac[!deviceId%in%c("WH_01_21-34","SH_02_78-4C"),-"apprIntemp"]%>%{#去掉两个只有一个数据的空调
+             cbind(.,.[,.(prevLogTime=as.numeric(datetime-c(NA,datetime[1:(length(datetime)-1)])),
+                          forwLogTime=as.numeric(c(datetime[2:(length(datetime))],NA)-datetime),
+                          prevIntempNa=is.na(mIntemp)+c(NA,is.na(mIntemp)[1:(length(mIntemp)-1)]),
+                          forwIntempNa=c(is.na(mIntemp)[2:(length(mIntemp))],NA)+is.na(mIntemp),
                           apprIntemp=na.approx(mIntemp,na.rm=FALSE)
-                        ),by=deviceId])
-nn<-data.table(id=c(rep("A",9),rep("B",8)),a=c(1,2,3,NaN,NaN,4,5,6,7,NA,5,NA,NA,NA,NA,8,10))
-nn$NAtest<-is.na(nn$a)
-nn<-cbind(nn,nn[,.(prevNAcountFromDT=is.na(a)+c(NA,is.na(a)[1:(length(a)-1)]),
-                   forwNAcountFromDT=is.na(a)+c(is.na(a)[2:(length(a))],NA)),by=id][,-"id"])
+             ),by=deviceId][,-"deviceId"])}
 
-nn$prevNAcount<-nn$NAtest+c(NA,nn[1:(nrow(nn)-1)]$NAtest)
-nn$forwNAcount<-nn$NAtest+c(nn[2:(nrow(nn))]$NAtest,NA)
-nn$approxValue<-na.approx(nn$a,na.rm = FALSE)
-nn[prevNAcount>1&forwNAcount>1]$approxValue<-NA
+#间隔两个小时及以上直接忽略
+#前后缺失两个以上直接忽略
+# 时间连续性，只有一边有可用数据（连续时间）不考虑
+data.htl.hour.ac.appr[is.na(mIntemp)&prevIntempNa>1&forwIntempNa>1]$apprIntemp<-NA
+data.htl.hour.ac.appr[is.na(mIntemp)&(prevLogTime>3601|forwLogTime>3601)]$apprIntemp<-NA
+apprCol<-c(names(data.htl.hour.ac),"apprIntemp")
+data.htl.hour.ac<-data.htl.hour.ac.appr[,..apprCol]
 
-nn<-nn%>%mutate_all(funs(ifelse(is.nan(.),NA, .)))
+nn<-data.htl.hour.ac[substr(labelDevHour,1,20)%in%
+                   substr(data.htl.hour.ac[is.na(mIntemp)]$labelDevHour,1,20)][,c("labelDevHour","mIntemp","apprIntemp")]
+
+outputCol<-c("labelDevHour",  "logCount",
+             "maxMode","mFanspeed","mSetTemp","apprIntemp" ,"mPower",
+             "totalElec")
+for(i in unique(data.htl.hour.ac$bldgId)){
+  write.csv(data.htl.hour.ac[bldgId==i&onCount>0.5,..outputCol],file=paste(i,"Approxed.csv",sep = "_"))
+}
+
+
+
+
+
