@@ -111,8 +111,13 @@ data.htl.raw$NextTime<-c(data.htl.raw[-1]$datetime,NA)
 data.htl.raw$nextInterval<-as.numeric(data.htl.raw$NextTime-data.htl.raw$datetime)
 data.htl.raw$city<-substr(data.htl.raw$deviceId,1,2)
 
+#有一些同一时刻采样重的
+#temp.duplicate<-
+data.htl.raw[,labelDevTime:=paste(deviceId,datetime,sep = "_")]
+#[datetime%in% (data.htl.raw[duplicated()]$datetime)]
+
 # 看一下室内温度分布
-ggplot(data.htl.raw[interval<1500],aes(x=interval))+geom_density()
+ggplot(data.htl.raw,aes(x=nextInterval))+geom_density()
 
 
 #清洗间隔过大间隔
@@ -146,7 +151,8 @@ data.htl.hour.ac<-data.htl.raw[,.(
     totalElec=max(totalElec,na.rm=TRUE)[1]-min(totalElec,na.rm=TRUE)[1],
     mIntemp=mean(inTemp,na.rm=TRUE),
     mInterval=mean(interval[interval>0&interval<1800],na.rm=TRUE),
-    sessionInterval=max(datetime,na.rm = TRUE)-min(datetime,na.rm = TRUE)
+    sessionInterval=max(datetime,na.rm = TRUE)-min(datetime,na.rm = TRUE),
+    hourSessionTime=sum(onOff*nextInterval,na.rm = TRUE)
   ),by=labelDevHour]
 
 
@@ -161,8 +167,7 @@ data.htl.hour.ac[totalElec>0]$onOffElec<-1
 
 
 ggplot(data.htl.hour.ac[sumElec>3600],aes(x=as.numeric(sumElec/(3600*1000))))+geom_density()
-ggplot(data.htl.hour.ac[maxMode!=0&totalElec>0],aes(x=as.factor(round(onRatio,1)),y=totalElec))+geom_boxplot()+ylim(c(0,1.5))+
-  stat_summary(fun = mean,na.rm=TRUE,geom = "point",color="red")
+ggplot(data.htl.hour.ac,aes(x=hourSessionTime))+geom_density()
 #看看一些奇怪的情况
 #小时开启率过低的
 nn<-data.htl.raw[labelDevHour%in%data.htl.hour.ac[onRatio<0.1&totalElec>0.2]$labelDevHour]
@@ -204,3 +209,27 @@ for(i in unique(data.htl.raw$bldgId)){
   write.csv(data.htl.raw[bldgId==i,..outputCol],file=paste(i,"Cleaned.csv",sep = "_"))
 }
 
+
+
+####小时级别的插值处理####
+data.htl.hour.ac<-data.htl.hour.ac%>%mutate_all(funs(ifelse(is.nan(.),NA, .)))
+
+data.htl.hour.ac1<-cbind(#data.htl.hour.ac,
+                        data.htl.hour.ac[,.(
+                          prevLogTime=c(datetime[1:(length(datetime)-1)],NA),
+                          forwLogTime=c(datetime[2:(length(datetime))],NA)-datetime,
+                          #prevIntempNa=is.na(mIntemp)+c(NA,is.na(mIntemp)[1:(length(mIntemp)-1)]),
+                          forwIntempNa=c(is.na(mIntemp)[2:(length(mIntemp))],NA)-is.na(mIntemp),
+                          apprIntemp=na.approx(mIntemp,na.rm=FALSE)
+                        ),by=deviceId])
+nn<-data.table(id=c(rep("A",9),rep("B",8)),a=c(1,2,3,NaN,NaN,4,5,6,7,NA,5,NA,NA,NA,NA,8,10))
+nn$NAtest<-is.na(nn$a)
+nn<-cbind(nn,nn[,.(prevNAcountFromDT=is.na(a)+c(NA,is.na(a)[1:(length(a)-1)]),
+                   forwNAcountFromDT=is.na(a)+c(is.na(a)[2:(length(a))],NA)),by=id][,-"id"])
+
+nn$prevNAcount<-nn$NAtest+c(NA,nn[1:(nrow(nn)-1)]$NAtest)
+nn$forwNAcount<-nn$NAtest+c(nn[2:(nrow(nn))]$NAtest,NA)
+nn$approxValue<-na.approx(nn$a,na.rm = FALSE)
+nn[prevNAcount>1&forwNAcount>1]$approxValue<-NA
+
+nn<-nn%>%mutate_all(funs(ifelse(is.nan(.),NA, .)))
