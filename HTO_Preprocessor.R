@@ -40,65 +40,7 @@ for(i in list.files()[grep(".csv",list.files(),fixed = TRUE)]){
   gc()
 }
 #看一下一栋楼各空调正常工作时的平均值
-ggplot(data.htl.raw[power>50],aes(x=as.factor(deviceId),y=power,group=deviceId))+
+ggplot(nn[power>50],aes(x=as.factor(deviceId),y=power,group=deviceId))+
   geom_boxplot(outlier.alpha = 0.3)+
   stat_summary(geom = "point",fun.y = mean,na.rm=TRUE,color="red")+
   stat_summary(geom = "line",fun.y = mean,na.rm=TRUE,group=1,color="red")
-
-# 看一下室内温度分布
-ggplot(data.htl.raw[totalElec<10000],aes(x=totalElec))+geom_density()
-
-nrow(data.htl.raw[totalElec>8000])
-
-
-stat.htl.device.hour<-data.htl.hour[,.(
-  hourLogCount=length(labelDevHour),
-  meanPower=mean(mPower[mPower>100],na.rm=TRUE),
-  useRatio=sum(logCount,na.rm=TRUE)/sum(onCount,na.rm=TRUE)
-),by=(deviceId=substr(labelDevHour,1,11))]
-
-# 合并设备ID
-info.htl.device.base<-read.xlsx(file="HTL_设备统计_tid.xlsx",sheetIndex = 1)
-data.htl.raw<-merge(data.htl.raw,info.htl.device.base[,c("tid","deviceId")],
-                    by.x="tid",by.y="tid",all.x=TRUE)
-save(data.htl.raw,file="HTL_原始数据集合_仅分配ID.rdata")
-s
-# 清理部分异常值
-# 功率>3000
-# 室温>40
-data.htl.raw<-data.htl.raw%>%{
-  .[inTemp>40]$inTemp<-NA
-  .[power>3000]$power<-NA
-  .[totalElec>10000]$totalElec<-NA
-  .
-}
-
-data.htl.raw$interval<-
-data.htl.raw$city<-substr(data.htl.raw$deviceId,1,2)
-
-#合并至小时
-setorder(data.htl.raw,deviceId,datetime)
-#注意广州的csv时间格式导入不同，需要重新单独进行时间的合并
-#data.htl.raw$datetime<-as.POSIXct(data.htl.raw$datetime)
-data.htl.raw$labelDevHour<-data.htl.raw%>%
-  {paste(.$deviceId,format(.$datetime,format="%y-%M-%d_%H"),sep = "_")}
-#此处已完成如上基本清洗
-data.htl.hour<-data.htl.raw[,.(
-    deviceId=deviceId[1],
-    logCount=length(datetime),
-    onCount=length(datetime[onOff==1]),
-    maxMode=getMode(mode,na.rm = TRUE)[1],
-    mFanspeed=mean(fanSpeed,na.rm=TRUE),
-    mSetTemp=mean(setTemp[onOff==1]),
-    mPower=mean(power[onOff==1],na.rm=TRUE),
-    mLowPower=mean(power[onOff==1&power<100],na.rm=TRUE),
-    mHighPower=mean(power[onOff==1&power>100],na.rm=TRUE),
-    lowPowerCount=length(power[onOff==1&power<100]),
-    highPowerCount=length(power[onOff==1&power>100]),
-    totalElec=max(totalElec,na.rm=TRUE)[1]-min(totalElec,na.rm=TRUE)[1],
-    mIntemp=mean(inTemp,na.rm=TRUE)
-  ),by=(labelDevHour=paste(deviceId,format(datetime,format="%y-%M-%d_%H"),sep = "_"))]
-
-names(data.htl.hour)[1]<-"labelDevHour"
-
-data.htl.hour
