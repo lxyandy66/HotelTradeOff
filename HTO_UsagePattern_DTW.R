@@ -77,12 +77,15 @@ data.htl.hour.ac.dtw.usage.wide[,lapply(.SD, mean,na.rm=TRUE),.SDcols=c(paste("h
 browser()
 
 #分别计算，仅计算一次
-distDtwSummer<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Summer",c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
-distDtwWinter<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Winter",c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+distDtwSummer<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]],c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+distDtwWinter<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]],c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
 
 clusterType<-c("dtw","Euclidean")
 kSize<-c(3:7)
 season<-c("Summer","Winter")
+conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
+data.htl.hour.ac.dtw.usage.wide$dtwUsageMode<-as.numeric(NA)
+
 for(i in season){
   for(j in kSize){
     if(i=="Summer"){
@@ -91,11 +94,11 @@ for(i in season){
       localDist<-distDtwWinter
     }
     
-    data.htl.hour.ac.dtw.usage.wide[season==i]$dtwUsageMode<-(pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering
+    data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]]$dtwUsageMode<-(pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering
     
-    merge(x=data.htl.hour.ac.dtw.usage.wide[season==i,lapply(.SD,mean,na.rm=TRUE),
+    merge(x=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
                                              .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","runtimeHr","occuTime") ,by=dtwUsageMode],
-          y=data.htl.hour.ac.dtw.usage.wide[season==i,.(count=length(runtime)),by=dtwUsageMode],all.x = TRUE,
+          y=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=dtwUsageMode],all.x = TRUE,
           by.x="dtwUsageMode",by.y = "dtwUsageMode")%>%{ 
             write.xlsx(.,file=paste(j,i,"overview.xlsx",sep = "_"))
             cat(paste(names(.),collapse = " "),"\n")

@@ -63,15 +63,17 @@ pamkClusterEvaluate(
 data.htl.hour.ac.conv.usage.wide$convUsageMode<-as.numeric(NA)
 season<-c("Summer","Winter")
 kSize<-c(3:7)
+conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
+
 for(i in season){
   for(j in kSize){
     
-    data.htl.hour.ac.conv.usage.wide[season==i]$convUsageMode<-(pamk(data.htl.hour.ac.conv.usage.wide[season==i,c(paste("h+14_",0:23,sep = ""))],
+    data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]]]$convUsageMode<-(pamk(data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]],c(paste("h+14_",0:23,sep = ""))],
                                                           krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering
     
-    merge(x=data.htl.hour.ac.conv.usage.wide[season==i,lapply(.SD,mean,na.rm=TRUE),
+    merge(x=data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
                                     .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","runtimeHr","occuTime") ,by=convUsageMode],
-          y=data.htl.hour.ac.conv.usage.wide[season==i,.(count=length(runtime)),by=convUsageMode],all.x = TRUE,
+          y=data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=convUsageMode],all.x = TRUE,
           by.x="convUsageMode",by.y = "convUsageMode")%>%{ 
             write.xlsx(.,file=paste(j,i,"overview.xlsx",sep = "_"))
             cat(paste(names(.),collapse = " "),"\n")
