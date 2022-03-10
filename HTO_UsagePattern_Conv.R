@@ -69,15 +69,16 @@ for(i in season){
     data.htl.hour.ac.conv.usage.wide[season==i]$convUsageMode<-(pamk(data.htl.hour.ac.conv.usage.wide[season==i,c(paste("h+14_",0:23,sep = ""))],
                                                           krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering
     
-    cbind(data.htl.hour.ac.conv.usage.wide[season==i,lapply(.SD,mean,na.rm=TRUE),
+    merge(x=data.htl.hour.ac.conv.usage.wide[season==i,lapply(.SD,mean,na.rm=TRUE),
                                     .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","runtimeHr","occuTime") ,by=convUsageMode],
-          data.htl.hour.ac.conv.usage.wide[season==i,.(count=length(runtime)),by=convUsageMode])%>%{ 
+          y=data.htl.hour.ac.conv.usage.wide[season==i,.(count=length(runtime)),by=convUsageMode],all.x = TRUE,
+          by.x="convUsageMode",by.y = "convUsageMode")%>%{ 
             write.xlsx(.,file=paste(j,i,"overview.xlsx",sep = "_"))
             cat(paste(names(.),collapse = " "),"\n")
-        melt(.,id.var=c("convUsageMode","runtime","runtimeHr","occuTime"))%>%{
+        melt(.,id.var=c("convUsageMode","runtime","runtimeHr","occuTime","count"))%>%{
           cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
         ggsave(file=paste(j,i,"MeanValue.png",sep = "_"),
-               plot = ggplot(data=.,aes(x=variable,y=value,color=convUsageMode,group=convUsageMode))+geom_line(), 
+               plot = ggplot(data=.,aes(x=variable,y=value,color=as.factor(convUsageMode),group=convUsageMode))+geom_line(), 
                width=16,height = 5,dpi = 100)
         }
         }

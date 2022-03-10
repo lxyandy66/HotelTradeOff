@@ -2,7 +2,8 @@
 #仅一栋
 library(dtw)
 
-data.htl.hour.ac.toy<-data.htl.hour.ac[bldgId=="SH_05"]#[deviceId=="SH_05_66-01"]#
+usingBldgId<-c("SH_05")#"SH_01","SH_02","SH_03", "SH_04",
+data.htl.hour.ac.toy<-data.htl.hour.ac[bldgId%in%usingBldgId]#[deviceId=="SH_05_66-01"]#
 
 data.htl.hour.ac.toy.wide<-data.htl.hour.ac.toy[,c("deviceId","datetime","hour","onRatio")]
 data.htl.hour.ac.toy.wide[,modiDatetime:=datetime-(14*3600)]
@@ -11,19 +12,19 @@ data.htl.hour.ac.toy.wide<-
   dcast(data.htl.hour.ac.toy.wide[,c("labelDevDate","modiHour","onRatio")],formula = labelDevDate~modiHour)%>%as.data.table(.)
 names(data.htl.hour.ac.toy.wide)<-c("labelDevDate",paste("h+14_",0:23,sep = ""))
 data.htl.hour.ac.toy.wide$runtime<-apply(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],MARGIN = 1,sum,na.rm=TRUE)
-
+data.htl.hour.ac.toy.wide$occuTime<-apply(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],MARGIN = 1,function(x){sum(!is.na(x),na.rm=TRUE)})
 ggplot(data.htl.hour.ac.toy.wide[runtime>1],#[as.character(date(datetime)) %in% c("2019-01-19","2019-01-20")]
        aes(x=runtime))+geom_density()
 
 
 data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))]<-
-  data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))]%>%mutate_all(funs(ifelse(is.na(.),0, .)))%>%as.data.table()
+  data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))]%>%mutate_all(funs(ifelse(is.na(.),0, .)))%>%as.data.table(.)
 nrow(data.htl.hour.ac.toy.wide[runtime<=1])
 
 data.htl.hour.ac.toy.wide<-data.htl.hour.ac.toy.wide[runtime>1]
 data.htl.hour.ac.toy.wide<-as.data.table(data.htl.hour.ac.toy.wide)
 
-data.htl.hour.ac.toy.wide[c(2,4)]%>%melt(.,id.var=c("labelDevDate","runtime"))%>%{
+data.htl.hour.ac.toy.wide[c(2,4)]%>%melt(.,id.var=c("labelDevDate","runtime","occuTime"))%>%{
   ggplot(.,#[as.character(date(datetime)) %in% c("2019-01-19","2019-01-20")]
          aes(x=variable,y=value,group=as.factor(labelDevDate),color=as.factor(labelDevDate),lty=as.factor(labelDevDate)))+geom_line()
 }
@@ -59,15 +60,17 @@ fviz_nbclust(x=data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],
              FUNcluster = kmeans, method = "wss", diss = distDtw, k.max = 10)
 
 ####Toy测试####
+
+#直接dtwCluster试聚类
 require(doParallel)
 # Create parallel workers
 cl <- makeCluster(detectCores())
 invisible(clusterEvalQ(cl, library(dtwclust)))
 registerDoParallel(cl)
 
-nn<-tsclust(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],type = "partitional",k=4,distance = "dtw", 
+nn1<-tsclust(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],type = "partitional",k=4,distance = "dtw", 
             centroid = "pam",#seed=711,
-            control = partitional_control(iter.max = 30L),
+            control = partitional_control(iter.max = 200L),
             args = tsclust_args(dist = list(window.type = "sakoechiba",window.size=2)))#,window.type = "sakoechiba",window.size=2
 
 data.htl.hour.ac.toy.wide$usageMode<-as.factor(nn@cluster)
@@ -76,8 +79,11 @@ data.htl.hour.ac.toy.wide[,lapply(.SD, mean,na.rm=TRUE),.SDcols=c(paste("h+14_",
     ggplot(data=.,aes(x=variable,y=value,color=usageMode,group=usageMode))+geom_line()
   }
 
-####Toy测试结束####
+browser()
+
+#分别计算，仅计算一次
 distDtw<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+
 distEuc<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="Euclidean")
 
 clusterType<-c("dtw","Euclidean")
@@ -92,18 +98,23 @@ for(i in clusterType){
     
     data.htl.hour.ac.toy.wide$usageMode<-(pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering%>%as.factor()
     #聚类均值及运行时间
-    data.htl.hour.ac.toy.wide[,lapply(.SD, mean,na.rm=TRUE),.SDcols=c(paste("h+14_",0:23,sep = ""),"runtime"),by=usageMode]%>%
-      melt(.,id.var=c("usageMode","runtime"))%>%{
+    merge(data.htl.hour.ac.toy.wide[,lapply(.SD,mean,na.rm=TRUE),
+                              .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","occuTime") ,by=usageMode],
+          data.htl.hour.ac.toy.wide[,.(count=length(runtime)),by=usageMode],
+          all.x=TRUE,by.x="convUsageMode",by.y = "convUsageMode")%>%
+      { write.csv(.,file=paste(j,i,"overview.csv",sep = "_"))
+        melt(.,id.var=c("usageMode","runtime","occuTime","count"))%>%{
         cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
         ggsave(file=paste(j,i,"MeanValue.png",sep = "_"),
-               plot = ggplot(data=.,aes(x=variable,y=value,color=usageMode,group=usageMode))+geom_line(), 
+               plot = ggplot(data=.,aes(x=variable,y=value,color=as.factor(usageMode),group=usageMode))+geom_line(), 
                width=16,height = 5,dpi = 100)
       }
+      }
     
-    data.htl.hour.ac.toy.wide[,-"runtime"]%>%melt(.,id.var=c("modiDate","usageMode"))%>%{
+    data.htl.hour.ac.toy.wide[,-"runtime"]%>%melt(.,id.var=c("labelDevDate","usageMode"))%>%{
       cat(table(.$usageMode),"\n")
       ggsave(file=paste(j,i,"overview.png",sep = "_"),
-             plot = ggplot(data = .,aes(x=variable,y=value,color=usageMode,group=modiDate,alpha=0.05))+geom_line()+facet_wrap(.~usageMode,ncol=1), 
+             plot = ggplot(data = .,aes(x=variable,y=value,color=usageMode,group=labelDevDate,alpha=0.05))+geom_line()+facet_wrap(.~usageMode,ncol=1), 
              width=6,height = 8,dpi = 200)
     }
   }
