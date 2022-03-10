@@ -8,7 +8,7 @@ data.htl.hour.ac.toy.wide<-data.htl.hour.ac.toy[,c("deviceId","datetime","hour",
 data.htl.hour.ac.toy.wide[,modiDatetime:=datetime-(14*3600)]
 data.htl.hour.ac.toy.wide[,":="(modiDate=date(modiDatetime),modiHour=hour(modiDatetime),labelDevDate=paste(deviceId,date(modiDatetime),sep="_"))]
 data.htl.hour.ac.toy.wide<-
-  dcast(data.htl.hour.ac.toy.wide[,c("labelDevDate","modiHour","onRatio")],formula = labelDevDate~modiHour)
+  dcast(data.htl.hour.ac.toy.wide[,c("labelDevDate","modiHour","onRatio")],formula = labelDevDate~modiHour)%>%as.data.table(.)
 names(data.htl.hour.ac.toy.wide)<-c("labelDevDate",paste("h+14_",0:23,sep = ""))
 data.htl.hour.ac.toy.wide$runtime<-apply(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],MARGIN = 1,sum,na.rm=TRUE)
 
@@ -23,9 +23,9 @@ nrow(data.htl.hour.ac.toy.wide[runtime<=1])
 data.htl.hour.ac.toy.wide<-data.htl.hour.ac.toy.wide[runtime>1]
 data.htl.hour.ac.toy.wide<-as.data.table(data.htl.hour.ac.toy.wide)
 
-data.htl.hour.ac.toy.wide[c(2,4)]%>%melt(.,id.var=c("modiDate","runtime"))%>%{
+data.htl.hour.ac.toy.wide[c(2,4)]%>%melt(.,id.var=c("labelDevDate","runtime"))%>%{
   ggplot(.,#[as.character(date(datetime)) %in% c("2019-01-19","2019-01-20")]
-         aes(x=variable,y=value,group=as.factor(modiDate),color=as.factor(modiDate),lty=as.factor(modiDate)))+geom_line()
+         aes(x=variable,y=value,group=as.factor(labelDevDate),color=as.factor(labelDevDate),lty=as.factor(labelDevDate)))+geom_line()
 }
 
 ####聚类评估#
@@ -54,23 +54,43 @@ alignment<-dtw(a,b,window.type = "sakoechiba",window.size=2,keep.internals = TRU
 alignment$distance
 dtwPlotTwoWay(alignment, xts=a,yts=b)
 
+
 fviz_nbclust(x=data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],
              FUNcluster = kmeans, method = "wss", diss = distDtw, k.max = 10)
 
+####Toy测试####
+require(doParallel)
+# Create parallel workers
+cl <- makeCluster(detectCores())
+invisible(clusterEvalQ(cl, library(dtwclust)))
+registerDoParallel(cl)
 
+nn<-tsclust(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))],type = "partitional",k=4,distance = "dtw", 
+            centroid = "pam",#seed=711,
+            control = partitional_control(iter.max = 30L),
+            args = tsclust_args(dist = list(window.type = "sakoechiba",window.size=2)))#,window.type = "sakoechiba",window.size=2
 
+data.htl.hour.ac.toy.wide$usageMode<-as.factor(nn@cluster)
+data.htl.hour.ac.toy.wide[,lapply(.SD, mean,na.rm=TRUE),.SDcols=c(paste("h+14_",0:23,sep = ""),"runtime"),by=usageMode]%>%
+  melt(.,id.var=c("usageMode","runtime"))%>%{
+    ggplot(data=.,aes(x=variable,y=value,color=usageMode,group=usageMode))+geom_line()
+  }
+
+####Toy测试结束####
+distDtw<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+distEuc<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="Euclidean")
 
 clusterType<-c("dtw","Euclidean")
 kSize<-c(3:7)
 for(i in clusterType){
   for(j in kSize){
     if(i=="dtw"){
-      distDtw<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+      localDist<-distDtw
     }else{
-      distDtw<-dist(data.htl.hour.ac.toy.wide[,c(paste("h+14_",0:23,sep = ""))], method="Euclidean")
+      localDist<-distEuc
     }
     
-    data.htl.hour.ac.toy.wide$usageMode<-(pamk(distDtw,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering%>%as.factor()
+    data.htl.hour.ac.toy.wide$usageMode<-(pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering%>%as.factor()
     #聚类均值及运行时间
     data.htl.hour.ac.toy.wide[,lapply(.SD, mean,na.rm=TRUE),.SDcols=c(paste("h+14_",0:23,sep = ""),"runtime"),by=usageMode]%>%
       melt(.,id.var=c("usageMode","runtime"))%>%{
