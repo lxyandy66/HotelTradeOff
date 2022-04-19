@@ -15,6 +15,37 @@ nn1<-data.htl.hour.ac.conv.usage[,.(maxMode=getMode(maxMode[onRatio>0.25],na.rm 
 data.htl.hour.ac.dtw.usage.wide<-merge(x=data.htl.hour.ac.dtw.usage.wide,y=nn1,all.x=TRUE,by="labelDevDate")
 names(data.htl.hour.ac.dtw.usage.wide)<-c("labelDevDate",paste("h+14_",0:23,sep = ""),"maxMode")
 
+
+####在室宽数据统计####
+#此处label为"SH_01_65-78_2019-02-20
+data.htl.hour.occ.wide<-
+  dcast(data.htl.hour.ac.conv.usage[,c("labelDevDate","modiHour","onRatio")],
+        formula = labelDevDate~modiHour,value.var = "onRatio")%>%as.data.table(.)
+names(data.htl.hour.occ.wide)<-c("labelDevDate",paste("h+14_",0:23,sep = ""))
+data.htl.hour.occ.wide[,c(paste("h+14_",0:23,sep = ""))]<-
+  data.htl.hour.occ.wide[,c(paste("h+14_",0:23,sep = ""))]%>%mutate_all(funs(ifelse(is.na(.),0, 1)))%>%as.data.table()
+#合并对应的季节和使用模式
+#使用模式数据集label为"SH_01_65-78_2019-02-27
+data.htl.hour.occ.wide<-merge(data.htl.hour.occ.wide,data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","dtwUsageModeLess","maxMode","season")],
+                              all.x = TRUE,by.x = "labelDevDate",by.y = "labelDevDate")
+data.htl.hour.occ.wide.winter<-data.htl.hour.occ.wide[season=="Winter"&!is.na(dtwUsageModeLess),-c("maxMode","season")][,lapply(.SD,mean,na.rm=TRUE),
+                                .SDcols=c(paste("h+14_",0:23,sep = "")),by=dtwUsageModeLess]
+data.htl.hour.occ.wide.winter.long<-melt(data.htl.hour.occ.wide.winter,id.vars = "dtwUsageModeLess")
+names(data.htl.hour.occ.wide.winter.long)[3]<-"occ"
+#提取冬季使用模式
+data.htl.hour.dtw.usage.winter<-data.htl.hour.ac.dtw.usage.wide[season=="Winter"&!is.na(dtwUsageModeLess),c(paste("h+14_",0:23,sep = ""),
+                                                                                                            "dtwUsageModeLess")][,lapply(.SD,mean,na.rm=TRUE),
+                                                                                                                         .SDcols=c(paste("h+14_",0:23,sep = "")),by=dtwUsageModeLess]
+data.htl.hour.dtw.usage.winter.long<-melt(data.htl.hour.dtw.usage.winter,id.vars = "dtwUsageModeLess")
+names(data.htl.hour.dtw.usage.winter.long)[3]<-"usage"
+#合并
+data.htl.hour.dtw.usage.winter.long[,mergeLabel:=paste(dtwUsageModeLess,variable,sep = "_")]
+data.htl.hour.occ.wide.winter.long[,mergeLabel:=paste(dtwUsageModeLess,variable,sep = "_")]
+data.htl.hour.occ.check<-merge(x=data.htl.hour.occ.wide.winter.long,y=data.htl.hour.dtw.usage.winter.long[,c("mergeLabel","usage")],
+                               all.x = TRUE,by.x = "mergeLabel",by.y = "mergeLabel")
+#删除多余的
+rm(data.htl.hour.occ.wide.winter.long,data.htl.hour.dtw.usage.winter.long)
+
 ####统计使用时长及在室####
 #空调使用时长精确统计
 data.htl.hour.ac.dtw.usage.wide$runtime<-apply(data.htl.hour.ac.dtw.usage.wide[,c(paste("h+14_",0:23,sep = ""))],MARGIN = 1,sum,na.rm=TRUE)
@@ -29,6 +60,7 @@ ggplot(data.htl.hour.ac.dtw.usage.wide[runtime>1],#[as.character(date(datetime))
        aes(x=runtime))+geom_density()
 
 #NA值排除
+
 data.htl.hour.ac.dtw.usage.wide[,c(paste("h+14_",0:23,sep = ""))]<-
   data.htl.hour.ac.dtw.usage.wide[,c(paste("h+14_",0:23,sep = ""))]%>%mutate_all(funs(ifelse(is.na(.),0, .)))%>%as.data.table()
 nrow(data.htl.hour.ac.dtw.usage.wide[runtime<=1])
@@ -55,6 +87,9 @@ data.htl.hour.ac.dtw.usage.wide$season<-apply(data.htl.hour.ac.dtw.usage.wide[,"
 data.htl.hour.ac.dtw.usage.wide$dtwUsageMode<-as.numeric(NA)
 season<-c("Summer","Winter")
 kSize<-c(3:7)
+
+pamkClusterEvaluate(data = distDtwWinter,startK = 2,endK = 10,criter = "ch",withPam = FALSE,isDistance = TRUE)
+
 
 #直接dtwCluster试聚类
 require(doParallel)
@@ -85,6 +120,8 @@ kSize<-c(3:7)
 season<-c("Summer","Winter")
 conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
 data.htl.hour.ac.dtw.usage.wide$dtwUsageMode<-as.numeric(NA)
+
+
 
 for(i in season){
   for(j in kSize){
