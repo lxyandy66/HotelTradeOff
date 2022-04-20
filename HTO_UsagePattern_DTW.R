@@ -26,25 +26,13 @@ data.htl.hour.occ.wide[,c(paste("h+14_",0:23,sep = ""))]<-
   data.htl.hour.occ.wide[,c(paste("h+14_",0:23,sep = ""))]%>%mutate_all(funs(ifelse(is.na(.),0, 1)))%>%as.data.table()
 #合并对应的季节和使用模式
 #使用模式数据集label为"SH_01_65-78_2019-02-27
-data.htl.hour.occ.wide<-merge(data.htl.hour.occ.wide,data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","dtwUsageModeLess","maxMode","season")],
+data.htl.hour.occ.wide<-merge(data.htl.hour.occ.wide,data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","dtwUsageMode","maxMode","season")],
                               all.x = TRUE,by.x = "labelDevDate",by.y = "labelDevDate")
-data.htl.hour.occ.wide.winter<-data.htl.hour.occ.wide[season=="Winter"&!is.na(dtwUsageModeLess),-c("maxMode","season")][,lapply(.SD,mean,na.rm=TRUE),
-                                .SDcols=c(paste("h+14_",0:23,sep = "")),by=dtwUsageModeLess]
-data.htl.hour.occ.wide.winter.long<-melt(data.htl.hour.occ.wide.winter,id.vars = "dtwUsageModeLess")
+data.htl.hour.occ.wide<-data.htl.hour.occ.wide[!is.na(dtwUsageMode),-c("maxMode")][,lapply(.SD,mean,na.rm=TRUE),
+                                .SDcols=c(paste("h+14_",0:23,sep = "")),by=paste(dtwUsageMode,season,sep = "_")]
 names(data.htl.hour.occ.wide.winter.long)[3]<-"occ"
-#提取冬季使用模式
-data.htl.hour.dtw.usage.winter<-data.htl.hour.ac.dtw.usage.wide[season=="Winter"&!is.na(dtwUsageModeLess),c(paste("h+14_",0:23,sep = ""),
-                                                                                                            "dtwUsageModeLess")][,lapply(.SD,mean,na.rm=TRUE),
-                                                                                                                         .SDcols=c(paste("h+14_",0:23,sep = "")),by=dtwUsageModeLess]
-data.htl.hour.dtw.usage.winter.long<-melt(data.htl.hour.dtw.usage.winter,id.vars = "dtwUsageModeLess")
-names(data.htl.hour.dtw.usage.winter.long)[3]<-"usage"
-#合并
-data.htl.hour.dtw.usage.winter.long[,mergeLabel:=paste(dtwUsageModeLess,variable,sep = "_")]
-data.htl.hour.occ.wide.winter.long[,mergeLabel:=paste(dtwUsageModeLess,variable,sep = "_")]
-data.htl.hour.occ.check<-merge(x=data.htl.hour.occ.wide.winter.long,y=data.htl.hour.dtw.usage.winter.long[,c("mergeLabel","usage")],
-                               all.x = TRUE,by.x = "mergeLabel",by.y = "mergeLabel")
-#删除多余的
-rm(data.htl.hour.occ.wide.winter.long,data.htl.hour.dtw.usage.winter.long)
+
+
 
 ####统计使用时长及在室####
 #空调使用时长精确统计
