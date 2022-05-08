@@ -204,6 +204,11 @@ stat.htl.hour.ac.usage.bldg.weekday<-data.htl.hour.ac.dtw.usage.wide[!is.na(patt
 stat.htl.hour.ac.usage.bldg.weekday[,":="(bldgId=substring(labelSeasonModeBldg,1,5),
                                          dtwUsageMode=substring(labelSeasonModeBldg,7,13),isBizday=substring(labelSeasonModeBldg,15),bizdayMode=substring(labelSeasonModeBldg,7))]
 
+stat.htl.hour.ac.usage.bldg.weekday<-data.htl.hour.ac.dtw.usage.wide[!is.na(patternName)&substring(labelDevDate,1,5)!="SH_03",
+                                                                        .(bldgId=substring(labelDevDate,1,5)[1],
+                                                                          isBizday=isBizday[1],
+                                                                          season=season[1],
+                                                                          count=length(runtime),patternName=patternName[1]),by=paste(substring(labelDevDate,1,5),patternName,isBizday,season)]
 
 #不同季节和是否工作日
 stat.htl.hour.ac.usage.bldg.season.weekday<-data.htl.hour.ac.dtw.usage.wide[!is.na(patternName)&substring(labelDevDate,1,5)!="SH_03",lapply(.SD, mean,na.rm=TRUE),
