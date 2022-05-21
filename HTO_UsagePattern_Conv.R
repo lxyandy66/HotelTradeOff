@@ -96,8 +96,19 @@ for(i in seasonSelect){
   }
 }
 
+##看一看分类的情况
+# 注意宽数据中的label格式"SH_01_66-6C_2019-08-20"
+# 注意原始数据中的label格式"CD_01_10-37_19-03-10_22"
 
+nn1<-data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]& dtwUsageMode==2]$labelDevDate#%>%{paste(substring(.$labelDevDate,1,12),substring(.$labelDevDate,15),sep = "")}
+data.htl.hour.ac.conv.usage[labelDevDate %in% nn1]%>%{table(.$labelDevDate)}%>%as.data.table()%>%{mean(.$N)}
 
+data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
+                                 .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","runtimeHr","occuTime"),by=dtwUsageMode]%>%
+  melt(.,id.var=c("dtwUsageMode","runtime","runtimeHr","occuTime"))%>%{
+  # cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
+  ggplot(data=.,aes(x=variable,y=value,color=as.factor(dtwUsageMode),alpha=0.0001,group=dtwUsageMode))+geom_line()
+}
 
 ####酒店用季节获取，仅分春夏季####
 getHotelSeason<-function(month){

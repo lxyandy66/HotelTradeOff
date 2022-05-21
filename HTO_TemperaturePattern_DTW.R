@@ -1,0 +1,81 @@
+#本脚本用于实现酒店空调室内温度聚类，基于DTW方法
+
+##由于酒店数据采集为事件驱动，大量人未在的数据无法采集
+# 需要根据气象数据插补
+
+usingBldgId<-c("SH_01","SH_02","SH_03","SH_04","SH_05")
+data.htl.hour.ac.env<-data.htl.hour.ac[bldgId%in% usingBldgId]
+
+####整理出所有对应LabelDevDate的小时数据，匹配至室外气象数据，以补充完整####
+asst.htl.hour<-data.table(datetime=seq.POSIXt(from = as.POSIXct("2018-01-01 00:00"),
+                                              to=as.POSIXct("2020-12-31 00:00"),by = "hour"))%>%.[,":="(date=format(datetime,format="%Y-%m-%d"))]
+
+asst.htl.hour.label<-data.htl.hour.ac.env[,c("labelDevHour","datetime")]%>%.[,":="(date=format(datetime,format="%Y-%m-%d"),
+                                                                                   labelDevDate=substring(labelDevHour,1,20))]
+asst.htl.hour.label<-asst.htl.hour.label[!duplicated(asst.htl.hour.label[,c("labelDevDate","date")])]
+asst.htl.hour.label[,c("labelDevHour","datetime")]<-NULL
+
+
+#实际上前面几步应该有更优的方法
+asst.htl.hour.label.merge<-merge(x=asst.htl.hour.label,y=asst.htl.hour,all.x = TRUE,by="date",allow.cartesian=TRUE)#注意后面的参数
+rm(asst.htl.hour.label,asst.htl.hour)
+asst.htl.hour.label.merge[,labelDevHour:=paste(labelDevDate,sprintf("%02d",hour(datetime)),sep = "_")]
+#合并空值，保留需要插值的缺失槽位
+asst.htl.hour.label.merge<-merge(asst.htl.hour.label.merge,data.htl.weather.sh[,c("datetime","outTemp")],by.x="datetime",by.y="datetime",all.x = TRUE)
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=asst.htl.hour.label.merge[,c("labelDevHour","outTemp")],by="labelDevHour",all.y = TRUE)
+
+
+####合并插值数据####
+####接收热环境插值####
+data.htl.hour.temp.appx<-fread(file="热环境聚类用插值/sh_01.csv")%>%
+  rbind(fread(file="热环境聚类用插值/sh_02_03.csv"))%>%
+  rbind(fread(file="热环境聚类用插值/sh_04_05.csv"))
+
+names(data.htl.hour.temp.appx)<-c("V1","labelDevHour","deviceId","datetime","apprFullTemp","outTemp","hour")
+
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=data.htl.hour.temp.appx[,c("labelDevHour","apprFullTemp")],all.x = TRUE)
+
+#注意原来的asst填充表里面很多标签没有，例如label datetime等
+data.htl.hour.ac.env[,":="(datetime=as.POSIXct(substring(labelDevHour,13),format="%y-%m-%d_%H"),
+                           deviceId=substring(labelDevHour,1,11),bldgId=substring(deviceId,1,5),
+                           isAppr=is.na(apprIntemp))]
+data.htl.hour.ac.env<-data.htl.hour.ac.env[,c("deviceId","datetime","onRatio","maxMode","apprFullTemp","isAppr")]
+data.htl.hour.ac.env[,modiDatetime:=datetime-(14*3600)]
+data.htl.hour.ac.env[,":="(modiDate=date(modiDatetime),modiHour=hour(modiDatetime),labelDevDate=paste(deviceId,date(modiDatetime),sep="_"))]
+
+##按设备-日期统计基本情况（如插补比例、使用时长等）
+stat.htl.hour.ac.env<-data.htl.hour.ac.env[]
+
+
+####宽数据转换####
+data.htl.hour.ac.env.wide<-
+  dcast(data.htl.hour.ac.env[,c("labelDevDate","modiHour","apprFullTemp")],
+        formula = labelDevDate~modiHour,value.var = "apprFullTemp")%>%as.data.table(.)
+names(data.htl.hour.ac.env.wide)<-c("labelDevDate",paste("h+14_",0:23,sep = ""))
+
+#从行为宽数据中获取一些标签以合并
+nn1<-data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","season","maxMode","seasonMode","runtime","month","isBizday","dtwUsageMode")]
+data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,y=nn1,all.x=TRUE,by="labelDevDate")
+#计算有数据的时间
+data.htl.hour.ac.env.wide$count<-apply(data.htl.hour.ac.env.wide[,c(paste("h+14_",0:23,sep = ""))],MARGIN = 1,FUN = function(x){sum(!is.na(x),na.rm = TRUE)})
+
+#仅保留有使用模式的，即要求与使用模式相同
+data.htl.hour.ac.env.wide<-data.htl.hour.ac.env.wide[!is.na(dtwUsageMode)]
+
+####并行计算的配置####
+require(doParallel)
+# Create parallel workers
+cl <- makeCluster(detectCores())
+invisible(clusterEvalQ(cl, library(dtw)))
+registerDoParallel(cl)
+
+
+#分别计算，仅计算一次
+distTempDtwSummer<-dist(data.htl.hour.ac.env.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]],
+                                                  c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+distTempDtwWinter<-dist(data.htl.hour.ac.env.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]],
+                                                  c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
+
+
+
+
