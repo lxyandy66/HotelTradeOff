@@ -36,7 +36,7 @@ nrow(data.htl.hour.ac.dtw.usage.wide[runtime<=1])
 data.htl.hour.ac.dtw.usage.wide<-data.htl.hour.ac.dtw.usage.wide[runtime>1]
 
 #时间轴查看
-data.htl.hour.ac.dtw.usage.wide[c(1:20)]%>%melt(.,id.var=c("labelDevDate","runtime","runtimeHr","occuTime"))%>%{
+data.htl.hour.ac.dtw.usage.wide[c(1:2)]%>%melt(.,id.var=c("labelDevDate","runtime","runtimeHr","occuTime","maxMode"))%>%{
   ggplot(.,#[as.character(date(datetime)) %in% c("2019-01-19","2019-01-20")]
          aes(x=variable,y=value,group=as.factor(labelDevDate),color=as.factor(labelDevDate),lty=as.factor(labelDevDate)))+geom_line()
 }
@@ -62,6 +62,7 @@ require(doParallel)
 cl <- makeCluster(detectCores())
 invisible(clusterEvalQ(cl, library(dtwclust)))
 registerDoParallel(cl)
+library(bigmemory)
 
 nn1<-tsclust(data.htl.hour.ac.dtw.usage.wide[,c(paste("h+14_",0:23,sep = ""))],type = "partitional",k=4,distance = "dtw", 
              centroid = "pam",#seed=711,
@@ -80,13 +81,31 @@ browser()
 distDtwSummer<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]],c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
 distDtwWinter<-dist(data.htl.hour.ac.dtw.usage.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]],c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
 
+
+#聚类数评估
+require(doParallel)
+# Create parallel workers
+cl <- makeCluster(detectCores())
+invisible(clusterEvalQ(cl, library(cluster)))
+registerDoParallel(cl)
+
+clusterTestSummerWss<-fviz_nbclust(x=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))],
+              FUN = cluster::pam, method = "wss", diss = distDtwSummer, k.max = 10)
+
+clusterTestSummerMeans<-NbClust(data = data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))], 
+                     diss = distDtwSummer, distance = NULL,min.nc = 2, max.nc = 10, method = "kmeans", index = "all", alphaBeale = 0.1)
+
+#聚类
 clusterType<-c("dtw","Euclidean")
 kSize<-c(3:7)
-season<-c("Summer","Winter")
+seasonSelect<-c("Summer")#,"Winter"
 conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
 data.htl.hour.ac.dtw.usage.wide$dtwUsageMode<-as.numeric(NA)
 
-for(i in season){
+pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = FALSE)
+
+
+for(i in seasonSelect){
   for(j in kSize){
     if(i=="Summer"){
       localDist<-distDtwSummer
@@ -100,11 +119,11 @@ for(i in season){
                                              .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime","runtimeHr","occuTime") ,by=dtwUsageMode],
           y=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=dtwUsageMode],all.x = TRUE,
           by.x="dtwUsageMode",by.y = "dtwUsageMode")%>%{ 
-            write.xlsx(.,file=paste(j,i,"overview.xlsx",sep = "_"))
+            write.xlsx(.,file=paste(j,i,"overview_DTW.xlsx",sep = "_"))
             cat(paste(names(.),collapse = " "),"\n")
             melt(.,id.var=c("dtwUsageMode","runtime","runtimeHr","occuTime","count"))%>%{
               cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
-              ggsave(file=paste(j,i,"MeanValue.png",sep = "_"),
+              ggsave(file=paste(j,i,"MeanValue_DTW.png",sep = "_"),
                      plot = ggplot(data=.,aes(x=variable,y=value,color=as.factor(dtwUsageMode),group=dtwUsageMode))+geom_line(), 
                      width=16,height = 5,dpi = 100)
             }
@@ -121,6 +140,18 @@ for(i in season){
   }
 }
 
+####正式聚类####
+data.htl.hour.ac.dtw.usage.wide[,c("dtwUsageModeLess","dtwUsageModeMore")]<-as.numeric(NA)
+
+data.htl.hour.ac.dtw.usage.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]]]$dtwUsageMode<-
+  (pamk(distDtwSummer,diss=TRUE,krange = 4,criter = "ch",usepam = TRUE))$pamobject$clustering
+data.htl.hour.ac.dtw.usage.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]]]$dtwUsageModeMore<-
+  (pamk(distDtwSummer,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
+
+data.htl.hour.ac.dtw.usage.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]]]$dtwUsageModeLess<-
+  (pamk(distDtwWinter,diss=TRUE,krange = 3,criter = "ch",usepam = TRUE))$pamobject$clustering
+data.htl.hour.ac.dtw.usage.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]]]$dtwUsageMode<-
+  (pamk(distDtwWinter,diss=TRUE,krange = 4,criter = "ch",usepam = TRUE))$pamobject$clustering
 
 
 

@@ -61,11 +61,11 @@ pamkClusterEvaluate(
 )
 
 data.htl.hour.ac.conv.usage.wide$convUsageMode<-as.numeric(NA)
-season<-c("Summer","Winter")
+seasonSelect<-c("Summer","Winter")
 kSize<-c(3:7)
 conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
 
-for(i in season){
+for(i in seasonSelect){
   for(j in kSize){
     
     data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]]]$convUsageMode<-(pamk(data.htl.hour.ac.conv.usage.wide[season==i&maxMode %in% conditionSelect[[i]],c(paste("h+14_",0:23,sep = ""))],
