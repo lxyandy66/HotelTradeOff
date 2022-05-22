@@ -1,0 +1,30 @@
+
+
+usingBldgId<-c("SH_01","SH_02","SH_03","SH_04","SH_05")
+data.htl.hour.ac.energy<-data.htl.hour.ac[bldgId%in% usingBldgId]
+
+#采用优化后的日划分
+data.htl.hour.ac.energy[,modiDatetime:=datetime-(14*3600)]
+data.htl.hour.ac.energy[,":="(modiDate=date(modiDatetime),
+                              modiHour=hour(modiDatetime),labelDevModiDate=paste(deviceId,date(modiDatetime),sep="_"))]
+
+
+#按照HZNU的方法，聚类属性为日空调能耗，日空调使用时长，逐时能耗标准差
+data.htl.day.ac.energy<-data.htl.hour.ac.energy[,.(date=format(modiDate[1],format="%Y-%m-%d"),
+                                                   sumElec=sum(sumElec,na.rm=TRUE)/(3600*1000),
+                                                   #runtime=sum(runtime,na.rm = TRUE), #runtime从行为数据集中直接合并
+                                                   stdDevElec=sd(sumElec/(3600*1000),na.rm = TRUE),
+                                                   logCount=length(datetime)
+                                                   ),by=labelDevModiDate]
+#注意这个label的划分
+#行为是SH_01_65-78_2019-11-18
+#且行为的labelDevDate是modiDate
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,
+                              y=data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","runtime","season","maxMode","seasonMode","month","isBizday","dtwUsageMode")],
+                              all.x=TRUE,by.x = "labelDevModiDate",by.y="labelDevDate")
+
+#聚类属性的标准化
+data.htl.day.ac.energy[,":="(sdSumElec=as.numeric(NA),sdStdDevElec=as.numeric(NA),sdRuntime=as.numeric(NA))]
+for(i in c("Summer","Winter")){
+  data.htl.day.ac.energy[season==i]$
+}

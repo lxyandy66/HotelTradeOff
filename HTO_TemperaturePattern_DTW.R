@@ -61,6 +61,8 @@ data.htl.hour.ac.env.wide$count<-apply(data.htl.hour.ac.env.wide[,c(paste("h+14_
 
 #仅保留有使用模式的，即要求与使用模式相同
 data.htl.hour.ac.env.wide<-data.htl.hour.ac.env.wide[!is.na(dtwUsageMode)]
+#存在部分缺一天，但是前后两天均受影响（第二天的0-14h）直接被删除的情况，其实有些case可以挽救一下，占比加起来10%，直接去掉好了
+data.htl.hour.ac.env.wide<-data.htl.hour.ac.env.wide[complete.cases(data.htl.hour.ac.env.wide[,c(paste("h+14_",0:23,sep = ""))])]
 
 ####并行计算的配置####
 require(doParallel)
