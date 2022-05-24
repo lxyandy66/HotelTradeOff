@@ -23,8 +23,25 @@ data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,
                               y=data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","runtime","season","maxMode","seasonMode","month","isBizday","dtwUsageMode")],
                               all.x=TRUE,by.x = "labelDevModiDate",by.y="labelDevDate")
 
-#聚类属性的标准化
+
+####聚类属性的归一化####
 data.htl.day.ac.energy[,":="(sdSumElec=as.numeric(NA),sdStdDevElec=as.numeric(NA),sdRuntime=as.numeric(NA))]
 for(i in c("Summer","Winter")){
-  data.htl.day.ac.energy[season==i]$
+  data.htl.day.ac.energy[season==i]$sdSumElec<-normalize(data.htl.day.ac.energy[season==i]$sumElec,upper = 0.9,lower = 0.1,intercept = 0.1)
+  data.htl.day.ac.energy[season==i]$sdRuntime<-normalize(data.htl.day.ac.energy[season==i]$runtime,upper = 0.9,lower = 0.1,intercept = 0.1)
+  data.htl.day.ac.energy[season==i]$sdStdDevElec<-normalize(data.htl.day.ac.energy[season==i]$stdDevElec,upper = 0.9,lower = 0.1,intercept = 0.1)
 }
+
+
+####聚类数评估####
+wssClusterEvaluate(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                   maxIter = 1000,
+                   maxK = 10)
+clusterEnergyWss<-fviz_nbclust(x=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                                   FUN = cluster::pam, method = "wss", k.max = 10)
+clusterEnergyEvaWss<-fviz_nbclust(x=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))],
+                                   FUN = cluster::pam, method = "wss", diss = distDtwSummer, k.max = 10)
+
+clusterEnergyEvaSummerMeans<-NbClust(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")], 
+                               min.nc = 2, max.nc = 10, method = "kmeans", index = "all", alphaBeale = 0.1)
+
