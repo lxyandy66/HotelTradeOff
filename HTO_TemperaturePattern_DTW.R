@@ -79,5 +79,77 @@ distTempDtwWinter<-dist(data.htl.hour.ac.env.wide[season=="Winter"&maxMode %in% 
                                                   c(paste("h+14_",0:23,sep = ""))], method="dtw",window.type = "sakoechiba",window.size=2)
 
 
+#聚类数评估
+require(doParallel)
+# Create parallel workers
+cl <- makeCluster(detectCores())
+invisible(clusterEvalQ(cl, library(cluster)))
+registerDoParallel(cl)
 
+clusterTestSummerWss<-fviz_nbclust(x=data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))],
+                                   FUN = cluster::pam, method = "wss", diss = distTempDtwSummer, k.max = 10)
+
+clusterTestTempSummerMeans<-NbClust(data = data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))], 
+                                diss = distTempDtwSummer, distance = NULL,min.nc = 2, max.nc = 10, method = "kmeans", index = "all", alphaBeale = 0.1)
+
+clusterTestTempSummer<-NbClust(data = data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))], 
+                                    diss = distTempDtwSummer, distance = NULL,min.nc = 2, max.nc = 10, method = "centroid", index = "all", alphaBeale = 0.1)
+
+kSize<-c(3:7)
+seasonSelect<-c("Summer")#,"Winter"
+conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
+
+data.htl.hour.ac.env.wide$tempMode<-as.numeric(NA)
+
+for(i in seasonSelect){
+  for(j in kSize){
+    if(i=="Summer"){
+      localDist<-distTempDtwSummer
+    }else{
+      localDist<-distTempDtwWinter
+    }
+    
+    data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]]]$tempMode<-(pamk(localDist,diss=TRUE,krange = j,criter = "ch",usepam = TRUE))$pamobject$clustering
+    
+    merge(x=data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
+                                            .SDcols=c(paste("h+14_",0:23,sep = ""),"runtime") ,by=tempMode],
+          y=data.htl.hour.ac.env.wide[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=tempMode],all.x = TRUE,
+          by.x="tempMode",by.y = "tempMode")%>%{ 
+            write.xlsx(.,file=paste(j,i,"overview_Temp_DTW.xlsx",sep = "_"))
+            cat(paste(names(.),collapse = " "),"\n")#,"runtimeHr","occuTime"
+            melt(.,id.var=c("stempMode","runtime","count"))%>%{
+              cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
+              ggsave(file=paste(j,i,"MeanValue_Temp_DTW.png",sep = "_"),
+                     plot = ggplot(data=.,aes(x=variable,y=value,color=as.factor(tempMode),group=tempMode))+geom_line(), 
+                     width=16,height = 5,dpi = 100)
+            }
+          }
+    #热环境热图生成
+    tmp.plot.heatMap<-data.htl.hour.ac.env.wide[season==i&
+                                                  maxMode %in% conditionSelect[[i]]][,c("labelDevDate","tempMode",
+                                                                                        paste("h+14_",0:23,sep = ""))]%>%
+                      melt(.,id.var=c("labelDevDate","tempMode"))%>%as.data.table
+    range<-boxplot.stats(tmp.plot.heatMap$value)
+    for(k in unique(tmp.plot.heatMap$tempMode)){
+      ggsave(file=paste(i,"kSize",j,"tempMode",k,"heatMap.png",sep="_"),
+             plot=ggplot(data=tmp.plot.heatMap[tempMode==k],
+                         aes(x=variable,y=labelDevDate,fill=value,group=as.factor(tempMode)))+
+               geom_raster(interpolate = TRUE)+
+               scale_fill_gradient(limits = c(range$stats[1],range$stats[5]),low = "green",high = "red")+
+               facet_wrap(~ tempMode, nrow = 2)+theme_classic()+
+               theme(axis.title.y=element_blank(),axis.text.y=element_blank(),
+                     axis.ticks.y=element_blank()),width=4,height=3,dpi=80)
+    }
+    
+    
+  }
+}
+
+
+# 正式聚类
+data.htl.hour.ac.env.wide$tempMode<-as.numeric(NA)
+data.htl.hour.ac.env.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]]]$tempMode<-
+  (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
+data.htl.hour.ac.env.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]]]$tempMode<-
+  (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
 
