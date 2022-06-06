@@ -149,7 +149,7 @@ data.htl.hour.ac.env.wide$tempMode<-as.numeric(NA)
 data.htl.hour.ac.env.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]]]$tempMode<-
   (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
 data.htl.hour.ac.env.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]]]$tempMode<-
-  (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
+  (pamk(distTempDtwSummer,diss=TRUE,krange = 4,criter = "ch",usepam = TRUE))$pamobject$clustering
 
 
 

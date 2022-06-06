@@ -47,14 +47,14 @@ pamkClusterEvaluate(data = data.htl.day.ac.energy[season==i&maxMode %in% conditi
 wssClusterEvaluate(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
                    maxIter = 1000,
                    maxK = 10)
-clusterEnergyWss<-fviz_nbclust(x=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+clusterEnergySummerWss<-fviz_nbclust(x=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
                                    FUN = cluster::pam, method = "wss", k.max = 10)
-clusterEnergyEvaWss<-fviz_nbclust(x=data.htl.hour.ac.dtw.usage.wide[season==i&maxMode %in% conditionSelect[[i]]][,c(paste("h+14_",0:23,sep = ""))],
-                                   FUN = cluster::pam, method = "wss", diss = distDtwSummer, k.max = 10)
 
-clusterEnergyEvaSummerMeans<-NbClust(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")], 
+clusterEnergyEvaWinterMeans<-NbClust(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")], 
                                min.nc = 2, max.nc = 10, method = "kmeans", index = "all", alphaBeale = 0.1)
 
+clusterEnergyEvaWinter<-NbClust(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")], 
+                                     min.nc = 2, max.nc = 10, method = "centroid", index = "all", alphaBeale = 0.1)
 
 ####È«²¿ÊÔ¾ÛÀà####
 data.htl.day.ac.energy$energyPattern<-as.numeric(NA)
