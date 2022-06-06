@@ -132,24 +132,89 @@ for(i in seasonSelect){
     range<-boxplot.stats(tmp.plot.heatMap$value)
     for(k in unique(tmp.plot.heatMap$tempMode)){
       ggsave(file=paste(i,"kSize",j,"tempMode",k,"heatMap.png",sep="_"),
-             plot=ggplot(data=tmp.plot.heatMap[tempMode==k],
+             plot=ggplot(data=tmp.plot.heatMap[tempMode==1],
                          aes(x=variable,y=labelDevDate,fill=value,group=as.factor(tempMode)))+
                geom_raster(interpolate = TRUE)+
-               scale_fill_gradient(limits = c(range$stats[1],range$stats[5]),low = "green",high = "red")+
+               scale_fill_gradient(limits = c(20,32),low = "green",high = "red")+#range$stats[1],range$stats[5]
                facet_wrap(~ tempMode, nrow = 2)+theme_classic()+
-               theme(axis.title.y=element_blank(),axis.text.y=element_blank(),
-                     axis.ticks.y=element_blank()),width=4,height=3,dpi=80)
+               theme(axis.title.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()),
+             width=4,height=3,dpi=80)
     }
-    
-    
   }
 }
 
 
-# 正式聚类
+#### 正式聚类 ####
 data.htl.hour.ac.env.wide$tempMode<-as.numeric(NA)
 data.htl.hour.ac.env.wide[season=="Winter"&maxMode %in% conditionSelect[["Winter"]]]$tempMode<-
   (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
 data.htl.hour.ac.env.wide[season=="Summer"&maxMode %in% conditionSelect[["Summer"]]]$tempMode<-
   (pamk(distTempDtwWinter,diss=TRUE,krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
+
+
+
+####聚类特征分析####
+unique(data.htl.hour.ac.env.wide$labelDevDate)[1:10]
+
+####长数据还原####
+####以data.htl.hour.ac.env为基准，补充内容以data.htl.hour.ac为主进行长数据合并
+#行为模式合并至温度
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=data.htl.hour.ac.env.wide[,c("labelDevDate","tempMode")],
+                            all.x=TRUE,by="labelDevDate")
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","patternName")],
+                            all.x=TRUE,by="labelDevDate")
+
+
+#还原小时label
+data.htl.hour.ac.env[,labelDevHour:=paste(deviceId,format(datetime,format="%y-%m-%d_%H"),sep = "_")]
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=data.htl.hour.ac[,c("labelDevHour","mSetTemp","mIntemp","onRatio","apprIntemp")],
+                            all.x=TRUE,by="labelDevHour")
+data.htl.hour.ac.env<-merge(x=data.htl.hour.ac.env,y=data.htl.weather.sh[,c("datetime","outTemp")],
+                            all.x=TRUE,by="datetime")
+data.htl.hour.ac.env$season<-apply(as.data.table(month(data.htl.hour.ac.env$modiDatetime)),MARGIN = 1,FUN = getHotelSeason)
+data.htl.hour.ac.env$month<-month(data.htl.hour.ac.env$modiDatetime)
+#长数据还原完成
+
+
+#室内温度模式统计
+stat.htl.hour.ac.env<-data.htl.hour.ac.env[season=="Summer"&!is.na(tempMode),
+                                           .(mSetTemp=mean(mSetTemp[onRatio>0.25],na.rm=TRUE),
+                                             apprFullTemp=mean(apprFullTemp,na.rm=TRUE),
+                                             apprIntemp=mean(apprIntemp,na.rm=TRUE),
+                                             outTemp=mean(outTemp,na.rm=TRUE)
+                                             ),by=tempMode]
+
+ggplot(data.htl.hour.ac.env[!is.na(tempMode)],aes(x=modiHour,y=(apprIntemp-outTemp),color=as.factor(tempMode),group=modiHour))+
+  geom_boxplot()+facet_wrap(.~tempMode,nrow=5)
+
+ggplot(data.htl.hour.ac.env.wide[!is.na(tempMode)&season=="Summer"],aes(x=tempMode,y=(mSetTemp),color=as.factor(tempMode)))+
+  geom_boxplot()+stat_summary(fun.y = "mean",geom = "line",group=1)+ 
+  theme_bw()+theme(axis.text=element_text(size=18),axis.title=element_text(size=18,face="bold"),legend.text = element_text(size=16))
+#+facet_wrap(.~tempMode,nrow=5)+
+
+#查看各温度模式的逐时箱形图
+data.htl.hour.ac.env.wide[!is.na(tempMode)&season=="Summer",c("labelDevDate","tempMode",paste("h+14_",0:23,sep = ""))]%>%
+  melt(.,id.var=c("labelDevDate","tempMode"))%>%{
+    ggplot(.,aes(x=variable,y=value,color=as.factor(tempMode)))+geom_boxplot()+facet_wrap(.~tempMode,nrow=5)
+  }
+
+
+##统计日内设定温度
+data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,
+                                 y = data.htl.hour.ac.env[,.(mSetTemp=mean(mSetTemp[onRatio>0.25],na.rm=TRUE)),by=labelDevDate],
+                                 all.x = TRUE,by="labelDevDate")
+
+####宽数据处理####
+#宽数据的行为模式等合并
+data.htl.hour.ac.env.wide$dtwUsageMode<-NULL#[,c(dtwUsageMode)]
+#!data.htl.hour.ac.env.wide$labelDevDate %in% data.htl.hour.ac.dtw.usage.wide$labelDevDate # 温度模式都包括行为模式
+data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,y = data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","patternName","occuTime")],
+                                 all.x = TRUE,by="labelDevDate")
+
+
+#室外温度合并
+data.htl.hour.ac.env.wide[,modiDate:=substring(labelDevDate,13)]
+data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,y=data.htl.weather.sh.modiDate,
+                                 all.x = TRUE,by="modiDate")
+ggplot(data.htl.hour.ac.env.wide[!is.na(tempMode)&season=="Winter"],aes(x=as.factor(tempMode),y=runtime))+geom_boxplot()
 

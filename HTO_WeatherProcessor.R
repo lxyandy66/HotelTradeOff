@@ -15,4 +15,16 @@ data.htl.weather.sh<-data.htl.weather.sh[,.(datetime=datetime[1],
                                             ralHum=mean(ralHum,na.rm=TRUE)),by=labelDatetime]
 
 data.htl.weather.sh$labelDatetime<-NULL
+
+#日内温度处理
+data.htl.weather.sh.day<-data.htl.weather.sh[,.(
+  windSpd=mean(windSpd,na.rm=TRUE),
+  outTemp=mean(outTemp,na.rm=TRUE),
+  ralHum=mean(ralHum,na.rm=TRUE)
+),by=(date=format((datetime),format="%Y-%m-%d"))]
                        
+data.htl.weather.sh.modiDate<-data.htl.weather.sh[,.(
+  windSpd=mean(windSpd,na.rm=TRUE),
+  outTemp=mean(outTemp,na.rm=TRUE),
+  ralHum=mean(ralHum,na.rm=TRUE)
+),by=(modiDate=format((datetime-(14*3600)),format="%Y-%m-%d"))]
