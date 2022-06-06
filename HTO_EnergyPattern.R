@@ -16,6 +16,13 @@ data.htl.day.ac.energy<-data.htl.hour.ac.energy[,.(date=format(modiDate[1],forma
                                                    stdDevElec=sd(sumElec/(3600*1000),na.rm = TRUE),
                                                    logCount=length(datetime)
                                                    ),by=labelDevModiDate]
+
+#合并一些标签
+
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,y=data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","occuTime")],
+                              all.x = TRUE,by.x = "labelDevModiDate",by.y="labelDevDate")
+
+
 #注意这个label的划分
 #行为是SH_01_65-78_2019-11-18
 #且行为的labelDevDate是modiDate
@@ -34,6 +41,9 @@ for(i in c("Summer","Winter")){
 
 
 ####聚类数评估####
+pamkClusterEvaluate(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                    startK = 2,endK = 10,criter = "ch",withPam = FALSE,isDistance = FALSE)
+
 wssClusterEvaluate(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
                    maxIter = 1000,
                    maxK = 10)
@@ -44,4 +54,36 @@ clusterEnergyEvaWss<-fviz_nbclust(x=data.htl.hour.ac.dtw.usage.wide[season==i&ma
 
 clusterEnergyEvaSummerMeans<-NbClust(data = data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")], 
                                min.nc = 2, max.nc = 10, method = "kmeans", index = "all", alphaBeale = 0.1)
+
+
+####全部试聚类####
+data.htl.day.ac.energy$energyPattern<-as.numeric(NA)
+
+kSize<-c(3:5)
+seasonSelect<-c("Summer")#,"Winter"
+conditionSelect<-list(Summer=c(1,3,4),Winter=c(1,2))
+
+for(i in seasonSelect){
+  for(j in kSize){
+
+    data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]]$energyPattern<-(pamk(data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                                                                                             krange = j,criter = "ch",usepam = FALSE))$pamobject$clustering
+    
+    merge(x=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
+                                            .SDcols=c("sumElec","stdDevElec","runtime","occuTime") ,by=energyPattern],#
+          y=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=energyPattern],all.x = TRUE,
+          by.x="energyPattern",by.y = "energyPattern")%>%{ 
+            write.xlsx(.,file=paste(j,i,"overview_EGY.xlsx",sep = "_"))
+            cat(paste(names(.),collapse = " "),"\n")
+            melt(.,id.var=c("energyPattern","runtime","occuTime","count"))%>%{
+              cat(paste(i,j,paste(unique(.$runtime),collapse = " "),"\n"))
+              
+            }
+          }
+    
+    
+  }
+}
+
+
 
