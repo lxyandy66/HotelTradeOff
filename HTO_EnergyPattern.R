@@ -70,9 +70,9 @@ for(i in seasonSelect){
                                                                                              krange = j,criter = "ch",usepam = FALSE))$pamobject$clustering
     
     merge(x=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]],lapply(.SD,mean,na.rm=TRUE),
-                                            .SDcols=c("sumElec","stdDevElec","runtime","occuTime") ,by=energyPattern],#
-          y=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=energyPattern],all.x = TRUE,
-          by.x="energyPattern",by.y = "energyPattern")%>%{ 
+                                            .SDcols=c("sumElec","stdDevElec","runtime","occuTime") ,by=energyPatternMore],#
+          y=data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]],.(count=length(runtime)),by=energyPatternMore],all.x = TRUE,
+          by.x="energyPatternMore",by.y = "energyPatternMore")%>%{ 
             write.xlsx(.,file=paste(j,i,"overview_EGY.xlsx",sep = "_"))
             cat(paste(names(.),collapse = " "),"\n")
             melt(.,id.var=c("energyPattern","runtime","occuTime","count"))%>%{
@@ -84,6 +84,54 @@ for(i in seasonSelect){
     
   }
 }
+
+####正式聚类####
+data.htl.day.ac.energy$energyPattern<-as.numeric(NA)
+data.htl.day.ac.energy$energyPatternMore<-data.htl.day.ac.energy$energyPattern
+
+i<-"Summer"
+data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]]$energyPattern<-(pamk(data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                                                                                         krange = 4,criter = "ch",usepam = TRUE))$pamobject$clustering
+i<-"Winter"
+data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]]$energyPatternMore<-(pamk(data.htl.day.ac.energy[season==i&maxMode %in% conditionSelect[[i]]][,c("sdSumElec","sdStdDevElec","sdRuntime")],
+                                                                                         krange = 5,criter = "ch",usepam = TRUE))$pamobject$clustering
+
+####温度和行为聚类的合并####
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,y=data.htl.hour.ac.dtw.usage.wide[,c("labelDevDate","patternName")],
+                              all.x=TRUE,by.x="labelDevModiDate",by.y="labelDevDate")
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,y=data.htl.hour.ac.env.wide[,c("labelDevDate","tempMode")],
+                              all.x=TRUE,by.x="labelDevModiDate",by.y="labelDevDate")
+
+
+####聚类特征分析####
+ggplot(data.htl.day.ac.energy[!is.na(energyPattern)&season=="Winter"],aes(x=as.factor(energyPatternMore),y=sumElec/runtime))+geom_boxplot()+
+  stat_summary(fun.y = "mean",geom = "line",group=1)+facet_wrap(.~season)
+
+##统计日内设定温度
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,
+                                 y = data.htl.hour.ac.env[,.(mSetTemp=mean(mSetTemp[onRatio>0.25],na.rm=TRUE)),by=labelDevDate],
+                                 all.x = TRUE,by.x="labelDevModiDate",by.y="labelDevDate")
+
+table(data.htl.day.ac.energy[,c("energyPatternMore","patternName","season")])
+
+
+
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,y=data.htl.weather.sh.modiDate,
+                                 all.x = TRUE,by.x="date",by.y="modiDate")
+
+####能耗聚类命名####
+#聚类核实
+data.htl.day.ac.energy[,c("season","sumElec","energyPatternMore")][,.(sumElec=mean(sumElec,na.rm=TRUE)),by=paste(season,energyPatternMore)]
+
+info.htl.energyPattern.name<-data.table(seasonEnergy=c("Winter_1","Winter_2","Winter_3","Winter_4","Winter_5",
+                                                       "Summer_1","Summer_2","Summer_3","Summer_4"),
+                                        energyPatternName=c("HE_MT","ME_MT","ME_ST","LE","HE_LT",
+                                                            "LE","ME","HE_LT","HE_MT"))
+data.htl.day.ac.energy$seasonEnergy<-paste(data.htl.day.ac.energy$season,data.htl.day.ac.energy$energyPatternMore,sep="_")
+data.htl.day.ac.energy<-merge(x=data.htl.day.ac.energy,y=info.htl.energyPattern.name,all.x=TRUE,by="seasonEnergy")
+
+
+data.htl.day.ac.energy$seasonEnergy<-NULL
 
 
 

@@ -218,3 +218,19 @@ data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,y=data.htl.weather.
                                  all.x = TRUE,by="modiDate")
 ggplot(data.htl.hour.ac.env.wide[!is.na(tempMode)&season=="Winter"],aes(x=as.factor(tempMode),y=runtime))+geom_boxplot()
 
+####温度聚类命名####
+#聚类核实
+data.htl.hour.ac.env.wide[,c("season","runtime","tempMode")][,.(runtime=mean(runtime,na.rm=TRUE)),by=paste(season,tempMode)]
+
+info.htl.tempPattern.name<-data.table(seasonTemp=c("Winter_1","Winter_2","Winter_3","Winter_4","Winter_5",
+                                                       "Summer_1","Summer_2","Summer_3","Summer_4"),
+                                        tempPatternName=c("Mid","High","High_Night","Low_Night","Low",
+                                                            "Low","Low_Night","Mid","High"))
+data.htl.hour.ac.env.wide$seasonTemp<-paste(data.htl.hour.ac.env.wide$season,data.htl.hour.ac.env.wide$tempMode,sep="_")
+data.htl.hour.ac.env.wide<-merge(x=data.htl.hour.ac.env.wide,y=info.htl.tempPattern.name,all.x=TRUE,by="seasonTemp")
+
+
+data.htl.hour.ac.env.wide$seasonTemp<-NULL
+
+table(data.htl.hour.ac.env.wide[,c("season","tempPatternName")])
+
